@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sleep Cycle Alarm</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0e1116">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sleep Alarm">
+<style>
+  :root {
+    --bg:#0e1116; --card:#171c26; --card2:#1f2633; --line:#2a3342;
+    --txt:#e6ebf2; --dim:#8b97a8; --accent:#7aa2ff; --good:#6ee7a8;
+    --warn:#ffcf6e; --best:#243a5e;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body {
+    margin:0; background:var(--bg); color:var(--txt);
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;
+    padding:max(22px,env(safe-area-inset-top)) 18px calc(40px + env(safe-area-inset-bottom));
+    -webkit-text-size-adjust:100%;
+  }
+  h1 { font-size:21px; margin:0 0 2px; }
+  .sub { color:var(--dim); font-size:13px; margin:0 0 18px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:16px 16px 14px; margin-bottom:16px; }
+  .card h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--dim); margin:0 0 12px; font-weight:600; display:flex;
+    justify-content:space-between; align-items:center; }
+  .row { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; }
+  label { display:block; font-size:12px; color:var(--dim); margin:0 0 5px; }
+  input { background:var(--card2); border:1px solid var(--line); color:var(--txt);
+    border-radius:9px; padding:11px 10px; font-size:16px; width:100%; }
+  .field { flex:1; min-width:140px; }
+  .small { font-size:12.5px; color:var(--dim); }
+  table { width:100%; border-collapse:collapse; margin-top:4px; }
+  th, td { text-align:left; padding:11px 8px; font-size:15px; border-bottom:1px solid var(--line); }
+  th { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.04em; font-weight:600; }
+  td.num { font-variant-numeric:tabular-nums; }
+  tr.best td { background:var(--best); }
+  .tag { display:inline-block; font-size:10px; font-weight:700; color:var(--bg);
+    background:var(--good); border-radius:5px; padding:1px 6px; margin-left:6px; vertical-align:middle; }
+  .set { font-weight:700; color:var(--accent); }
+  .note { font-size:12.5px; color:var(--dim); background:var(--card2);
+    border-left:3px solid var(--accent); padding:10px 12px; border-radius:0 9px 9px 0; margin-top:6px; }
+  button.link { background:none; border:none; color:var(--accent); cursor:pointer;
+    font-size:12px; padding:0; font-weight:600; }
+  #install { display:none; width:100%; margin-top:4px; background:var(--accent);
+    color:#0b1020; border:none; border-radius:10px; padding:12px; font-size:15px;
+    font-weight:700; cursor:pointer; }
+  .ios-hint { display:none; font-size:12.5px; color:var(--dim); margin-top:8px; }
+</style>
+</head>
+<body>
+  <h1>Sleep Cycle Alarm</h1>
+  <p class="sub">Wake at a cycle boundary, not mid-deep-sleep. Set the result as your Fitbit Smart Wake alarm.</p>
+
+  <div class="card">
+    <h2>Your cycle <button class="link" id="resetProfile" title="Reset to defaults">reset</button></h2>
+    <div class="row">
+      <div class="field" style="max-width:150px;">
+        <label>Cycle length (min)</label>
+        <input type="number" id="cycle" min="50" max="140" step="1" inputmode="numeric">
+      </div>
+      <div class="field" style="max-width:150px;">
+        <label>Fall-asleep (min)</label>
+        <input type="number" id="onset" min="0" max="60" step="1" inputmode="numeric">
+      </div>
+    </div>
+    <div class="small" id="profileMeta" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="card">
+    <h2>When are you going to bed?</h2>
+    <div class="row">
+      <div class="field">
+        <label>Bedtime (lights out)</label>
+        <input type="datetime-local" id="bedtime">
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <div class="field" style="max-width:170px;">
+        <label>Optional: up by</label>
+        <input type="time" id="wakeby">
+      </div>
+      <div class="field small" style="padding-bottom:11px;">Highlights the most cycles that still finish by then.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Set your Fitbit Smart Wake alarm to…</h2>
+    <div id="results"></div>
+    <div class="note" id="note"></div>
+  </div>
+
+  <button id="install">Install to home screen</button>
+  <div class="ios-hint" id="iosHint">To install: tap the <b>Share</b> icon, then <b>Add to Home Screen</b>.</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const DEFAULTS = { cycle: 90, onset: 15 };
+
+function load(k, d){ const v = localStorage.getItem('sca_'+k); return v===null ? d : v; }
+function save(k, v){ localStorage.setItem('sca_'+k, v); }
+
+function fmtTime(d){ return d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); }
+function nowLocalISO(){
+  const d = new Date(); d.setSeconds(0,0);
+  const local = new Date(d.getTime() - d.getTimezoneOffset()*60000);
+  return local.toISOString().slice(0,16);
+}
+
+function recompute(){
+  const cycle = parseInt($('#cycle').value || DEFAULTS.cycle, 10);
+  const onset = parseInt($('#onset').value || DEFAULTS.onset, 10);
+  save('cycle', cycle); save('onset', onset);
+
+  const bt = $('#bedtime').value;
+  if(!bt){ return; }
+  const bedtime = new Date(bt);
+  const onsetDt = new Date(bedtime.getTime() + onset*60000);
+
+  // optional "up by" target
+  let target = null;
+  const wb = $('#wakeby').value;
+  if(wb){
+    const [hh,mm] = wb.split(':').map(Number);
+    target = new Date(onsetDt); target.setHours(hh, mm, 0, 0);
+    if(target <= onsetDt) target.setDate(target.getDate()+1);
+  }
+
+  const counts = [3,4,5,6,7];
+  let bestN = null;
+  const opts = counts.map(n => {
+    const boundary = new Date(onsetDt.getTime() + n*cycle*60000);
+    const fitbitSet = new Date(boundary.getTime() + 15*60000);
+    if(target && boundary <= target) bestN = n;
+    return { n, totalH:(n*cycle/60).toFixed(1), boundary, fitbitSet };
+  });
+
+  $('#results').innerHTML = '<table><thead><tr><th>Cycles</th><th>Sleep</th>'+
+    '<th>Wake (ideal)</th><th>Set alarm</th></tr></thead><tbody>'+
+    opts.map(o => `<tr class="${o.n===bestN?'best':''}">
+      <td class="num">${o.n}${o.n===bestN?'<span class="tag">PICK</span>':''}</td>
+      <td class="num">${o.totalH} h</td>
+      <td class="num">${fmtTime(o.boundary)}</td>
+      <td class="num set">${fmtTime(o.fitbitSet)}</td></tr>`).join('')+
+    '</tbody></table>';
+
+  $('#note').innerHTML =
+    `Asleep ~${onset} min after ${fmtTime(bedtime)} (onset ${fmtTime(onsetDt)}). `+
+    `<b>Set alarm</b> is 15 min past the cycle boundary so the Charge 5's Smart Wake window `+
+    `(it fires within 30 min <i>before</i> the set time) brackets your light-sleep boundary. `+
+    `Open Fitbit app → Alarms → enable <b>Smart Wake</b> on that time.`;
+}
+
+// init
+$('#cycle').value = load('cycle', DEFAULTS.cycle);
+$('#onset').value = load('onset', DEFAULTS.onset);
+$('#bedtime').value = nowLocalISO();
+$('#profileMeta').textContent =
+  'Stored on this device. Edit anytime — the textbook average is 90 min, but yours may differ (Fitbit users: use your measured value).';
+
+['cycle','onset','bedtime','wakeby'].forEach(id => $('#'+id).addEventListener('input', recompute));
+$('#resetProfile').addEventListener('click', () => {
+  $('#cycle').value = DEFAULTS.cycle; $('#onset').value = DEFAULTS.onset; recompute();
+});
+recompute();
+
+// PWA install
+let deferred = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); deferred = e; $('#install').style.display = 'block';
+});
+$('#install').addEventListener('click', async () => {
+  if(deferred){ deferred.prompt(); await deferred.userChoice; deferred = null; $('#install').style.display='none'; }
+});
+// iOS has no install prompt — show manual hint when not already installed
+const isiOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const standalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+if(isiOS && !standalone){ $('#iosHint').style.display = 'block'; }
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
