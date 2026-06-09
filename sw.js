@@ -1,6 +1,6 @@
 // Cache-first service worker — the app is fully static, so once cached it runs
 // completely offline. Bump CACHE when you change any shell file.
-const CACHE = 'sleep-cycle-v1';
+const CACHE = 'sleep-cycle-v2';
 const SHELL = [
   './',
   './index.html',

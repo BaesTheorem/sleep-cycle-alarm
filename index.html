@@ -49,6 +49,11 @@
     border-left:3px solid var(--accent); padding:10px 12px; border-radius:0 9px 9px 0; margin-top:6px; }
   button.link { background:none; border:none; color:var(--accent); cursor:pointer;
     font-size:12px; padding:0; font-weight:600; }
+  .seg { display:flex; gap:6px; margin-bottom:14px; }
+  .seg button { flex:1; background:var(--card2); border:1px solid var(--line);
+    color:var(--dim); border-radius:9px; padding:10px 8px; font-size:13px;
+    cursor:pointer; font-weight:600; }
+  .seg button.on { background:var(--best); color:var(--txt); border-color:var(--accent); }
   #install { display:none; width:100%; margin-top:4px; background:var(--accent);
     color:#0b1020; border:none; border-radius:10px; padding:12px; font-size:15px;
     font-weight:700; cursor:pointer; }
@@ -75,24 +80,25 @@
   </div>
 
   <div class="card">
-    <h2>When are you going to bed?</h2>
+    <h2>Plan your night</h2>
+    <div class="seg" id="mode">
+      <button data-mode="forward" class="on">Going to bed at…</button>
+      <button data-mode="reverse">Must be up by…</button>
+    </div>
     <div class="row">
-      <div class="field">
+      <div class="field" id="fwdField">
         <label>Bedtime (lights out)</label>
         <input type="datetime-local" id="bedtime">
       </div>
-    </div>
-    <div class="row" style="margin-top:12px;">
-      <div class="field" style="max-width:170px;">
-        <label>Optional: up by</label>
+      <div class="field" id="revField" style="display:none; max-width:200px;">
+        <label>Must be up by</label>
         <input type="time" id="wakeby">
       </div>
-      <div class="field small" style="padding-bottom:11px;">Highlights the most cycles that still finish by then.</div>
     </div>
   </div>
 
   <div class="card">
-    <h2>Set your Fitbit Smart Wake alarm to…</h2>
+    <h2 id="resultsHead">Set your Fitbit Smart Wake alarm to…</h2>
     <div id="results"></div>
     <div class="note" id="note"></div>
   </div>
@@ -114,31 +120,39 @@ function nowLocalISO(){
   return local.toISOString().slice(0,16);
 }
 
-function recompute(){
+const COUNTS = [3,4,5,6,7];
+const OFFSET = 15;          // Smart Wake set-time offset past the cycle boundary
+const TARGET_SLEEP = 480;   // 8 h — anchor for the highlighted default row
+let mode = 'forward';
+
+// Cycle count whose total sleep lands closest to the healthy target (ties → more).
+function recommendedCycles(cycle){
+  return COUNTS.reduce((best,n) =>
+    Math.abs(n*cycle-TARGET_SLEEP) < Math.abs(best*cycle-TARGET_SLEEP) ? n : best, COUNTS[0]);
+}
+
+function readInputs(){
   const cycle = parseInt($('#cycle').value || DEFAULTS.cycle, 10);
   const onset = parseInt($('#onset').value || DEFAULTS.onset, 10);
   save('cycle', cycle); save('onset', onset);
+  return { cycle, onset };
+}
 
+function recompute(){
+  return mode === 'reverse' ? recomputeReverse() : recomputeForward();
+}
+
+function recomputeForward(){
+  const { cycle, onset } = readInputs();
   const bt = $('#bedtime').value;
   if(!bt){ return; }
   const bedtime = new Date(bt);
   const onsetDt = new Date(bedtime.getTime() + onset*60000);
+  const bestN = recommendedCycles(cycle);
 
-  // optional "up by" target
-  let target = null;
-  const wb = $('#wakeby').value;
-  if(wb){
-    const [hh,mm] = wb.split(':').map(Number);
-    target = new Date(onsetDt); target.setHours(hh, mm, 0, 0);
-    if(target <= onsetDt) target.setDate(target.getDate()+1);
-  }
-
-  const counts = [3,4,5,6,7];
-  let bestN = null;
-  const opts = counts.map(n => {
+  const opts = COUNTS.map(n => {
     const boundary = new Date(onsetDt.getTime() + n*cycle*60000);
-    const fitbitSet = new Date(boundary.getTime() + 15*60000);
-    if(target && boundary <= target) bestN = n;
+    const fitbitSet = new Date(boundary.getTime() + OFFSET*60000);
     return { n, totalH:(n*cycle/60).toFixed(1), boundary, fitbitSet };
   });
 
@@ -158,6 +172,52 @@ function recompute(){
     `Open Fitbit app → Alarms → enable <b>Smart Wake</b> on that time.`;
 }
 
+function recomputeReverse(){
+  const { cycle, onset } = readInputs();
+  const wb = $('#wakeby').value;
+  if(!wb){ $('#results').innerHTML=''; $('#note').innerHTML=''; return; }
+  // Resolve "up by" HH:MM to the next time it occurs.
+  const [hh,mm] = wb.split(':').map(Number);
+  const now = new Date();
+  let wakeBy = new Date(now); wakeBy.setHours(hh, mm, 0, 0);
+  if(wakeBy <= now) wakeBy.setDate(wakeBy.getDate()+1);
+  // The alarm's upper bound IS wake-by; the ideal cycle boundary sits OFFSET earlier.
+  const boundary = new Date(wakeBy.getTime() - OFFSET*60000);
+  const bestN = recommendedCycles(cycle);
+
+  const opts = COUNTS.map(n => {
+    const onsetDt = new Date(boundary.getTime() - n*cycle*60000);
+    const bedtime = new Date(onsetDt.getTime() - onset*60000);
+    return { n, totalH:(n*cycle/60).toFixed(1), bedtime, onsetDt };
+  });
+
+  $('#results').innerHTML = '<table><thead><tr><th>Cycles</th><th>Sleep</th>'+
+    '<th>Bed by</th><th>Asleep by</th></tr></thead><tbody>'+
+    opts.map(o => `<tr class="${o.n===bestN?'best':''}">
+      <td class="num">${o.n}${o.n===bestN?'<span class="tag">PICK</span>':''}</td>
+      <td class="num">${o.totalH} h</td>
+      <td class="num set">${fmtTime(o.bedtime)}</td>
+      <td class="num">${fmtTime(o.onsetDt)}</td></tr>`).join('')+
+    '</tbody></table>';
+
+  $('#note').innerHTML =
+    `You must be up by <b>${fmtTime(wakeBy)}</b> — set <i>that</i> as your Smart Wake alarm (it's the upper bound). `+
+    `It fires within 30 min before, bracketing your cycle boundary at <b>${fmtTime(boundary)}</b>. `+
+    `Pick a row and go to bed at the <b>Bed by</b> time to land that wake on a full cycle (asleep ~${onset} min later). `+
+    `Open Fitbit app → Alarms → enable <b>Smart Wake</b> on ${fmtTime(wakeBy)}.`;
+}
+
+function setMode(m){
+  mode = m;
+  $('#fwdField').style.display = m === 'forward' ? '' : 'none';
+  $('#revField').style.display = m === 'reverse' ? '' : 'none';
+  $('#resultsHead').textContent = m === 'reverse'
+    ? 'Go to bed at…' : 'Set your Fitbit Smart Wake alarm to…';
+  document.querySelectorAll('#mode button').forEach(b =>
+    b.classList.toggle('on', b.dataset.mode === m));
+  recompute();
+}
+
 // init
 $('#cycle').value = load('cycle', DEFAULTS.cycle);
 $('#onset').value = load('onset', DEFAULTS.onset);
@@ -166,6 +226,7 @@ $('#profileMeta').textContent =
   'Stored on this device. Edit anytime — the textbook average is 90 min, but yours may differ (Fitbit users: use your measured value).';
 
 ['cycle','onset','bedtime','wakeby'].forEach(id => $('#'+id).addEventListener('input', recompute));
+document.querySelectorAll('#mode button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
 $('#resetProfile').addEventListener('click', () => {
   $('#cycle').value = DEFAULTS.cycle; $('#onset').value = DEFAULTS.onset; recompute();
 });

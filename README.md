@@ -9,11 +9,18 @@ You then set that time as your Fitbit Charge 5's native **Smart Wake** alarm.
 ## How it works
 
 A sleep cycle averages ~90 min. Waking at a cycle boundary feels far better than
-waking mid-cycle. Enter your bedtime; the app shows wake times for 3–7 completed
-cycles. The "Set alarm" time is the cycle boundary **+ 15 min**, so the Charge 5's
-Smart Wake window (it fires within 30 min *before* the set time) brackets your
-light-sleep boundary. The watch handles the actual in-the-moment wake — this app
-is the math.
+waking mid-cycle. The "Set alarm" time is the cycle boundary **+ 15 min**, so the
+Charge 5's Smart Wake window (it fires within 30 min *before* the set time)
+brackets your light-sleep boundary. The watch handles the actual in-the-moment
+wake — this app is the math.
+
+It plans both directions:
+
+- **Going to bed at…** — enter your bedtime; see wake times for 3–7 completed
+  cycles and the alarm to set for each.
+- **Must be up by…** — enter a hard wake-by time; it becomes the alarm's upper
+  bound, and the app works backward to the bedtimes that land N full cycles just
+  before it. Pick the row with the sleep you want and go to bed at that time.
 
 ## Personalization
 
